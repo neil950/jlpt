@@ -12,7 +12,7 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
   font-size: 16px; line-height: 1.5; overscroll-behavior-y: none;
 }
-body[data-view="home"] { background: linear-gradient(180deg, #fcd98c 0, #fdeecb 200px, var(--bg) 480px) no-repeat, var(--bg); }
+body[data-view="home"], body[data-view="levels"] { background: linear-gradient(180deg, #fcd98c 0, #fdeecb 200px, var(--bg) 480px) no-repeat, var(--bg); }
 [lang="ja"] { font-family: "Noto Sans JP", "Noto Sans CJK JP", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; }
 button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; }
 button:disabled { opacity: .35; cursor: default; }
@@ -30,8 +30,6 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .ic svg { width: 26px; height: 26px; }
 .bar-title { flex: 1; text-align: center; font-size: 20px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bar-title.left { text-align: left; padding-left: 4px; }
-.level-pick { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; gap: 6px; font-size: 22px; }
-.level-pick select { position: absolute; inset: 0; opacity: 0; width: 100%; font-size: 16px; }
 .caret { font-size: 12px; color: var(--sub); }
 
 /* 卡片 */
@@ -83,6 +81,24 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
 .hint { color: var(--sub); font-size: 14px; margin: 8px 0; }
 .center { text-align: center; }
 code { background: #f3f3f1; padding: 2px 6px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+
+/* 起始畫面 */
+.lv-intro { margin: 6px 4px 12px; color: #6f6f6f; font-weight: 600; }
+.lv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lv-card { display: block; background: var(--card); border-radius: var(--r); padding: 16px;
+  border: 1px solid rgba(0,0,0,.04); box-shadow: 0 2px 12px rgba(0,0,0,.05); transition: transform .1s; }
+.lv-card:active { transform: scale(.98); }
+.lv-card.empty { opacity: .5; box-shadow: none; }
+.lv-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; }
+.lv-name { font-size: 30px; font-weight: 800; line-height: 1.2; }
+.lv-sub { color: var(--sub); font-size: 14px; margin: 6px 0 10px; }
+.mini.wide { display: block; width: 100%; }
+.lv-all { margin-top: 12px; }
+.lv-all .lv-card { background: var(--dark); color: #fff; }
+.lv-all .lv-name { font-size: 24px; }
+.lv-all .lv-sub { color: #bdbdbd; }
+.lv-all .mini { background: #4a4a4a; }
+.pill.sm { font-size: 12px; padding: 1px 7px; }
 
 /* 單字卡 */
 .study { display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding-bottom: calc(14px + env(safe-area-inset-bottom)); }

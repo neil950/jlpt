@@ -43,7 +43,7 @@ function rebuild() {
   });
   WORDS = [...map].map(([id, w]) => Object.assign(w, { id }));
   byId = new Map(WORDS.map(w => [w.id, w]));
-  if (!availableLevels().includes(settings.level)) settings.level = availableLevels()[0] || 'N5';
+  if (settings.level !== 'ALL' && !availableLevels().includes(settings.level)) settings.level = availableLevels()[0] || 'N5';
 }
 
 /* ========== 小工具 ========== */
@@ -91,7 +91,8 @@ const I = {
 
 /* ========== 學習邏輯 ========== */
 function availableLevels() { return LEVELS.filter(lv => WORDS.some(w => w.lv === lv)); }
-function levelWords(lv = settings.level) { return WORDS.filter(w => w.lv === lv); }
+function levelWords(lv = settings.level) { return lv === 'ALL' ? WORDS : WORDS.filter(w => w.lv === lv); }
+const levelName = lv => lv === 'ALL' ? '全部級別' : lv;
 function status(id) {
   const p = progress[id];
   if (!p) return 'new';
@@ -124,7 +125,9 @@ function planSession(lv = settings.level) {
   const now = Date.now(), ws = levelWords(lv);
   const due = ws.filter(w => isDue(w.id, now)).sort((a, b) => progress[a.id].due - progress[b.id].due);
   const reviewIds = due.slice(0, settings.target).map(w => w.id);
-  const newIds = ws.filter(w => !progress[w.id]).slice(0, settings.target - reviewIds.length).map(w => w.id);
+  let fresh = ws.filter(w => !progress[w.id]);
+  if (lv === 'ALL') fresh = shuffle(fresh); // 全部級別：新單字從各級數隨機抽
+  const newIds = fresh.slice(0, settings.target - reviewIds.length).map(w => w.id);
   return { reviewIds, newIds };
 }
 
@@ -191,6 +194,27 @@ function toggleStar(id) {
   store.set('stars', stars);
 }
 
+/* ========== 畫面：起始（選級數） ========== */
+function renderLevels() {
+  const card = lv => {
+    const st = stats(lv), empty = !st.total;
+    return `<a class="lv-card ${empty ? 'empty' : ''}" href="${empty ? '#/settings' : '#/home'}" data-lv="${lv}">
+      <div class="lv-top"><b class="lv-name">${levelName(lv)}</b>${st.due ? `<span class="pill purple">待複習 ${st.due}</span>` : ''}</div>
+      ${empty ? '<p class="lv-sub">還沒有單字<br>可到設定匯入</p>'
+        : `<p class="lv-sub">已學習 ${st.learned} / ${st.total}</p><span class="mini wide"><i style="width:${pct(st.learned, st.total)}%"></i></span>`}
+    </a>`;
+  };
+  app.innerHTML = `
+  <header class="bar"><span class="ic"></span><b class="bar-title">日檢單字</b><a class="ic" href="#/settings" aria-label="設定">${I.gear}</a></header>
+  <p class="lv-intro">選擇要練習的級數</p>
+  <div class="lv-grid">${LEVELS.map(card).join('')}</div>
+  <div class="lv-all">${card('ALL')}</div>
+  <p class="hint center">「全部級別」會把所有級數的單字混在一起出題，<br>學習進度和各級數共用。</p>`;
+  app.querySelectorAll('[data-lv]').forEach(a => a.onclick = () => {
+    if (!a.classList.contains('empty')) { settings.level = a.dataset.lv; saveSettings(); }
+  });
+}
+
 /* ========== 畫面：首頁 ========== */
 function gauge(done, total) {
   const L = 219.9, r = total ? done / total : 0;
@@ -219,9 +243,8 @@ function renderHome() {
 
   app.innerHTML = `
   <header class="bar">
-    <span class="ic"></span>
-    <label class="level-pick"><b>${lv} 單字</b><span class="caret">▾</span>
-      <select id="lv" aria-label="選擇級數">${availableLevels().map(l => `<option ${l === lv ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    <button class="ic" data-back aria-label="選擇級數">${I.back}</button>
+    <b class="bar-title">${lv === 'ALL' ? '全部級別' : lv + ' 單字'}</b>
     <a class="ic" href="#/settings" aria-label="設定">${I.gear}</a>
   </header>
   <section class="panel">
@@ -239,7 +262,7 @@ function renderHome() {
     <button class="primary" id="start" ${s || total ? '' : 'disabled'}>${btn}</button>
   </section>
   <section class="info">
-    <div class="info-head"><h2>${lv} 學習資訊</h2><a class="link" href="#/list/all">所有單字 ${I.chev}</a></div>
+    <div class="info-head"><h2>${levelName(lv)} 學習資訊</h2><a class="link" href="#/list/all">所有單字 ${I.chev}</a></div>
     <div class="rows card-rows">
       ${statRow('長期記憶單字', st.long, st.total, '#/list/long')}
       ${statRow('已學習單字', st.learned, st.total, '#/list/learned')}
@@ -248,7 +271,6 @@ function renderHome() {
     <p class="hint center">「長期記憶」＝複習間隔已達 14 天以上的單字</p>
   </section>`;
 
-  document.getElementById('lv').onchange = e => { settings.level = e.target.value; saveSettings(); renderHome(); };
   document.getElementById('target').onchange = e => {
     settings.target = +e.target.value; saveSettings();
     if (session && session.done === 0) { session = null; saveSession(); }
@@ -260,7 +282,7 @@ function renderHome() {
 /* ========== 畫面：單字卡 ========== */
 function renderStudy() {
   const s = activeSession();
-  if (!s) return finished ? renderDone() : location.replace('#/');
+  if (!s) return finished ? renderDone() : location.replace('#/home');
   const id = s.queue[0], w = byId.get(id);
   if (!w) { s.queue.shift(); s.total--; saveSession(); return renderStudy(); }
 
@@ -283,7 +305,7 @@ function renderStudy() {
   <div class="study">
     <header class="bar">
       <button class="ic" data-back aria-label="返回">${I.back}</button>
-      <b class="bar-title">${s.lv} 單字學習</b>
+      <b class="bar-title">${levelName(s.lv)} 單字學習</b>
       <a class="ic" href="#/settings" aria-label="設定">${I.gear}</a>
     </header>
     <div class="progress-row">
@@ -293,6 +315,7 @@ function renderStudy() {
     </div>
     <div class="flash">
       <div class="flash-top">
+        ${s.lv === 'ALL' ? `<span class="pill orange">${w.lv}</span>` : ''}
         <span class="pill ${p ? 'blue' : 'green'}">${p ? daysAgo(p.first) : '新單字'}</span>
         <button class="ic star ${stars[id] ? 'on' : ''}" id="star" aria-label="收藏">${I.star}</button>
         <span class="grow"></span>
@@ -354,15 +377,15 @@ function renderDone() {
   stopTimer();
   const f = finished;
   app.innerHTML = `
-  <header class="bar"><a class="ic" href="#/" aria-label="回首頁">${I.back}</a><b class="bar-title">${settings.level} 單字學習</b><span class="ic"></span></header>
+  <header class="bar"><a class="ic" href="#/home" aria-label="回首頁">${I.back}</a><b class="bar-title">${levelName(settings.level)} 單字學習</b><span class="ic"></span></header>
   <section class="panel done-box">
     <div class="done-mark">✓</div>
     <h2>完成第 ${f.n} 次學習</h2>
     <p class="sub">${f.total} 個單字 · 用時 ${fmtTime(f.elapsed)}</p>
     <button class="primary" id="more">再學一輪</button>
-    <a class="secondary" href="#/">回首頁</a>
+    <a class="secondary" href="#/home">回首頁</a>
   </section>`;
-  document.getElementById('more').onclick = () => { finished = null; startSession(); if (!session) location.replace('#/'); else renderStudy(); };
+  document.getElementById('more').onclick = () => { finished = null; startSession(); if (!session) location.replace('#/home'); else renderStudy(); };
 }
 
 /* ========== 畫面：單字詳細 ========== */
@@ -433,7 +456,7 @@ function renderList(filter) {
   app.innerHTML = `
   <header class="bar solid">
     <button class="ic" data-back aria-label="返回">${I.back}</button>
-    <b class="bar-title left">${settings.level} 單字清單</b><span class="ic"></span>
+    <b class="bar-title left">${levelName(settings.level)} 單字清單</b><span class="ic"></span>
   </header>
   <div class="sticky-tools">
     <label class="search">${I.search}<input id="q" type="search" placeholder="搜尋單字、讀音或中文" value="${esc(listQuery)}"></label>
@@ -450,6 +473,7 @@ function renderList(filter) {
     document.getElementById('items').innerHTML = list.map(w => `
       <a class="item" href="#/word/${encodeURIComponent(w.id)}">
         <span class="dot st-${status(w.id)}"></span>
+        ${settings.level === 'ALL' ? `<span class="pill orange sm">${w.lv}</span>` : ''}
         <span class="item-w"><b lang="ja">${esc(w.w)}</b>${w.r !== w.w ? `<small lang="ja">${esc(w.r)}</small>` : ''}</span>
         <span class="item-m">${esc(w.m)}</span>
         ${stars[w.id] ? `<span class="star on mini-star">${I.star}</span>` : ''}
@@ -547,7 +571,7 @@ function renderSettings() {
 
   <section class="panel">
     <h3>重設</h3>
-    <button class="btn-sm danger" id="resetLv">清除 ${lv} 的所有學習進度</button>
+    <button class="btn-sm danger" id="resetLv">清除 ${levelName(lv)} 的所有學習進度</button>
   </section>`;
 
   const $ = s => document.getElementById(s);
@@ -588,7 +612,7 @@ function renderSettings() {
     r.readAsText(f, 'utf-8');
   };
   $('resetLv').onclick = () => {
-    if (!confirm(`確定清除 ${lv} 的所有學習進度？這個動作無法復原。`)) return;
+    if (!confirm(`確定清除 ${levelName(lv)} 的所有學習進度？這個動作無法復原。`)) return;
     levelWords(lv).forEach(w => delete progress[w.id]);
     if (session && session.lv === lv) session = null;
     saveProgress(); saveSession(); toast('已清除'); renderSettings();
@@ -599,12 +623,13 @@ function renderSettings() {
 function route() {
   const [, view, arg] = (location.hash.slice(1) || '/').split('/');
   if (view !== 'study') stopTimer();
-  document.body.dataset.view = view || 'home';
-  if (view === 'study') renderStudy();
+  document.body.dataset.view = view || 'levels';
+  if (view === 'home') renderHome();
+  else if (view === 'study') renderStudy();
   else if (view === 'word') renderDetail(decodeURIComponent(arg || ''));
   else if (view === 'list') renderList(arg);
   else if (view === 'settings') renderSettings();
-  else renderHome();
+  else renderLevels();
   window.scrollTo(0, 0);
 }
 
