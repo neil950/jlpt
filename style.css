@@ -159,6 +159,20 @@ code { background: #f3f3f1; padding: 2px 6px; border-radius: 6px; font-size: 13p
 .ex-line { display: flex; align-items: center; gap: 10px; }
 .ex-jp { flex: 1; font-size: 22px; margin: 0; }
 .ex-zh { color: var(--sub); margin: 6px 0 0; }
+.wlink { color: var(--blue); text-decoration: underline dotted; text-underline-offset: 5px; text-decoration-thickness: 1.5px; }
+.wlink { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.wlink:active { background: var(--blue-soft); border-radius: 4px; }
+#pop { position: fixed; z-index: 60; width: min(280px, calc(100vw - 24px)); background: var(--card); border: 1px solid var(--line);
+  border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 14px 16px 12px; }
+#pop[hidden] { display: none; }
+.pop-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pop-head b { font-size: 24px; font-weight: 700; }
+.pop-read { color: var(--orange); font-size: 16px; }
+.pop-head .pill { margin-left: auto; align-self: center; }
+.pop-mean { font-size: 16px; margin-top: 6px; }
+.pop-pos { color: var(--sub); font-size: 13px; margin-top: 2px; }
+.pop-go { display: block; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); text-align: right; color: var(--blue); font-weight: 600; font-size: 15px; }
+.ex-jp .self { color: var(--orange); font-weight: 700; }
 .kv-list { background: #fff; border-radius: 16px; border: 1.5px solid var(--line); }
 .kv-list div { display: flex; justify-content: space-between; padding: 12px 16px; border-top: 1px solid var(--line); }
 .kv-list div:first-child { border-top: 0; }

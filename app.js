@@ -43,6 +43,7 @@ function rebuild() {
   });
   WORDS = [...map].map(([id, w]) => Object.assign(w, { id }));
   byId = new Map(WORDS.map(w => [w.id, w]));
+  linkIndex = null;
   if (settings.level !== 'ALL' && !availableLevels().includes(settings.level)) settings.level = availableLevels()[0] || 'N5';
 }
 
@@ -388,6 +389,87 @@ function renderDone() {
   document.getElementById('more').onclick = () => { finished = null; startSession(); if (!session) location.replace('#/home'); else renderStudy(); };
 }
 
+/* ========== 例句中的單字連結 ========== */
+// 五段動詞：字尾 → 活用時接在語幹後的假名
+const GODAN = { う: 'わいうえおっ', く: 'かきくけこいっ', ぐ: 'がぎぐげごい', す: 'さしすせそ', つ: 'たちつてとっ',
+  ぬ: 'なにぬねのん', ぶ: 'ばびぶべぼん', む: 'まみむめもん', る: 'らりるれろっ' };
+const IE_ROW = 'いきぎしじちぢにひびぴみりえけげせぜてでねへべぺめれ'; // る前面是這些假名 → 一段動詞
+const isKana = c => /[぀-ヿ]/.test(c || '');
+let linkIndex = null;
+// 中文意思裡有意義的字（去掉「的、了…」這類虛字），用來和例句翻譯比對
+const STOP_ZH = new Set('的地得了是在有個或與和及等');
+const hanSet = s => new Set([...(s || '')].filter(c => /[㐀-鿿]/.test(c) && !STOP_ZH.has(c)));
+
+// 為每個單字建立比對樣式：原形、動詞／い形容詞的語幹＋活用假名
+function buildLinkIndex() {
+  const idx = new Map();
+  let id, mset;
+  const add = (text, next, pri, verb = false) => {
+    if (!idx.has(text[0])) idx.set(text[0], []);
+    idx.get(text[0]).push({ text, next, id, pri, verb, mset });
+  };
+  for (const w of WORDS) {
+    id = w.id; mset = hanSet(w.m);
+    const s = w.w, kanaOnly = [...s].every(isKana);
+    if (kanaOnly && s.length < 3) continue; // を、ある、もう… 太短，容易誤判
+    add(s, null, 3);
+    const last = s.slice(-1), stem = s.slice(0, -1), minStem = kanaOnly ? 2 : 1;
+    if (/動詞/.test(w.p)) {
+      if (s.length > 2 && s.endsWith('する')) add(s.slice(0, -2), 'しさすせ', 1, true);
+      else if (last === 'る' && IE_ROW.includes(stem.slice(-1)) && stem.length >= 2) add(stem, null, 2, true);
+      else if (last === 'る' && !isKana(stem.slice(-1))) add(stem, 'らりるれろっまたてなよさ', 1, true);
+      else if (GODAN[last] && stem.length >= minStem) add(stem, GODAN[last], 1, true);
+    } else if (/い形容詞/.test(w.p) && last === 'い' && stem.length >= minStem) {
+      add(stem, 'いかくけさそ', 1);
+    }
+  }
+  return idx;
+}
+
+const isKanji = c => /[㐀-鿿々]/.test(c || '');
+
+// 由左到右找最長的單字，轉成可點的連結。
+// 同樣長度的候選有好幾個時，依序比：是不是這頁的單字 → 中文意思和例句翻譯相同的字數 → 詞性規則
+function linkify(text, selfId, trans = '') {
+  if (!linkIndex) linkIndex = buildLinkIndex();
+  const tset = hanSet(trans);
+  const better = (a, b) => b.len !== a.len ? a.len > b.len
+    : (a.id === selfId) !== (b.id === selfId) ? a.id === selfId
+    : a.weak !== b.weak ? !a.weak
+    : a.score !== b.score ? a.score > b.score
+    : a.pri > b.pri;
+  let out = '', i = 0, lastEnd = -1;
+  while (i < text.length) {
+    let best = null;
+    const prevKanji = i !== lastEnd && isKanji(text[i - 1]); // 前一個字若屬於上一個單字，不算相連
+    for (const c of linkIndex.get(text[i]) || []) {
+      if (!text.startsWith(c.text, i)) continue;
+      let len = c.text.length;
+      if (c.next) { if (!c.next.includes(text[i + len] || '\0')) continue; len++; }
+      // 單一個漢字夾在其他漢字中間（例如「台風」的「風」）多半是別的詞，不連結
+      if (len === 1 && isKanji(text[i]) && (prevKanji || isKanji(text[i + 1]))) continue;
+      // 單一個漢字後面接的不是助詞（例如「量ります」），多半是沒收錄的動詞，不連結
+      if (len === 1 && !c.next && isKanji(text[i]) && /[ぁ-ゖ]/.test(text[i + 1] || '')
+          && !'はがをにでともへやかねよなのごおだじ'.includes(text[i + 1])) continue;
+      // 後面接「て、た、ます…」時，同長度的名詞和動詞優先選動詞（眺め／眺める）
+      const pri = c.verb && /[てたまなられよろさずぬ]/.test(text[i + len] || '') ? 4 : c.pri;
+      let score = 0;
+      for (const ch of c.mset) if (tset.has(ch)) score++;
+      // 五段動詞接え段（入れ、書け…）是可能形／假定形，較少見；和一段動詞（入れる）同長時讓給一段
+      const weak = !!c.next && c.verb && 'えけげせねべめれ'.includes(text[i + len - 1]);
+      const cand = { len, id: c.id, pri, score, weak };
+      if (!best || better(cand, best)) best = cand;
+    }
+    if (!best) { out += esc(text[i++]); continue; }
+    const part = esc(text.substr(i, best.len));
+    out += best.id === selfId ? `<b class="self">${part}</b>`
+      : `<a class="wlink" href="#/word/${encodeURIComponent(best.id)}">${part}</a>`;
+    i += best.len;
+    lastEnd = i;
+  }
+  return out;
+}
+
 /* ========== 畫面：單字詳細 ========== */
 function renderDetail(id) {
   const w = byId.get(id);
@@ -395,6 +477,7 @@ function renderDetail(id) {
   const p = progress[id], st = status(id);
   const stChip = { new: '<span class="pill gray">未學習</span>', learning: '<span class="pill blue">學習中</span>', long: '<span class="pill blue">• 長期記憶</span>' }[st];
   const dueChip = p ? (isDue(id) ? '<span class="pill purple">待複習</span>' : `<span class="pill purple">${fmtDate(p.due)} 複習</span>`) : '';
+  const exHtml = w.ex ? linkify(w.ex, id, w.exm) : '';
 
   app.innerHTML = `
   <header class="bar solid">
@@ -411,8 +494,9 @@ function renderDetail(id) {
     <div class="chips">${stChip}${dueChip}</div>
   </section>
   ${w.ex ? `<section class="d-sec"><h3>例句</h3>
-    <div class="ex-line"><p class="ex-jp" lang="ja">${esc(w.ex)}</p><button class="round" id="speakEx" aria-label="朗讀例句">${I.speak}</button></div>
-    <p class="ex-zh">${esc(w.exm)}</p></section>` : ''}
+    <div class="ex-line"><p class="ex-jp" lang="ja">${exHtml}</p><button class="round" id="speakEx" aria-label="朗讀例句">${I.speak}</button></div>
+    <p class="ex-zh">${esc(w.exm)}</p>
+    ${exHtml.includes('class="wlink"') ? '<p class="hint">點藍色單字可查看該單字；長按可快速看意思。</p>' : ''}</section>` : ''}
   <section class="d-sec"><h3>學習紀錄</h3>
     ${p ? `<div class="kv-list">
       <div><span>第一次學習</span><b>${fmtDate(p.first)}</b></div>
@@ -640,6 +724,58 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden && session) saveSession(); });
 window.addEventListener('hashchange', route);
+
+/* ========== 長按例句裡的單字：小視窗 ========== */
+const pop = document.createElement('div');
+pop.id = 'pop'; pop.hidden = true; pop.setAttribute('role', 'dialog');
+document.body.appendChild(pop);
+let pressTimer = null, pressAt = null, suppressClick = false;
+
+function showPop(a) {
+  const id = decodeURIComponent(a.getAttribute('href').slice('#/word/'.length)), w = byId.get(id);
+  if (!w) return;
+  pop.innerHTML = `
+    <div class="pop-head"><b lang="ja">${esc(w.w)}</b>${w.r !== w.w ? `<span class="pop-read" lang="ja">${esc(w.r)}</span>` : ''}
+      <span class="pill orange sm">${w.lv}</span></div>
+    <div class="pop-mean">${esc(w.m)}</div>
+    ${w.p ? `<div class="pop-pos">${esc(w.p)}</div>` : ''}
+    <a class="pop-go" href="#/word/${encodeURIComponent(id)}">查看單字 ›</a>`;
+  pop.hidden = false;
+  const r = a.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  pop.style.left = Math.min(Math.max(12, r.left + r.width / 2 - pw / 2), innerWidth - pw - 12) + 'px';
+  pop.style.top = (r.top - ph - 10 > 8 ? r.top - ph - 10 : r.bottom + 10) + 'px';
+  suppressClick = true; // 放開手指時不要接著跳轉
+  if (navigator.vibrate) navigator.vibrate(10);
+}
+const hidePop = () => { pop.hidden = true; };
+const cancelPress = () => { clearTimeout(pressTimer); pressAt = null; };
+
+document.addEventListener('pointerdown', e => {
+  suppressClick = false;
+  if (!pop.hidden && !pop.contains(e.target)) hidePop();
+  const a = e.target.closest('.wlink');
+  if (!a) return;
+  pressAt = { x: e.clientX, y: e.clientY };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => showPop(a), 450);
+});
+document.addEventListener('pointermove', e => {
+  if (pressAt && Math.hypot(e.clientX - pressAt.x, e.clientY - pressAt.y) > 10) cancelPress();
+});
+document.addEventListener('pointerup', cancelPress);
+document.addEventListener('pointercancel', cancelPress);
+// 手機長按連結會叫出瀏覽器選單，改成顯示小視窗
+document.addEventListener('contextmenu', e => {
+  const a = e.target.closest('.wlink');
+  if (!a) return;
+  e.preventDefault();
+  if (pop.hidden) showPop(a);
+});
+document.addEventListener('click', e => {
+  if (suppressClick && e.target.closest('.wlink')) { e.preventDefault(); suppressClick = false; }
+}, true);
+window.addEventListener('scroll', hidePop, { passive: true });
+window.addEventListener('hashchange', hidePop);
 
 rebuild();
 route();
